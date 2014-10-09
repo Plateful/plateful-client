@@ -1,0 +1,29 @@
+
+<ion-view title="List">
+  <ion-content class="bg-grey">
+    <ion-list>
+      <ion-item style="padding:0px;">
+        <div class="button-bar">
+          <button ng-click="list.showBookmarks()" ng-class="{ 'button-assertive': list.viewBookmarks }" class="col button button-clear button-stable">Bookmarks ({{list.bookmarksCount}})</button>
+          <button ng-click="list.showCollection()" ng-class="{ 'button-assertive': list.viewCollection }" class="col button button-clear button-stable">Collection ({{list.collectionCount}})</button>
+        </div>
+      </ion-item>
+    </ion-list>
+    <ion-list ng-show="list.viewCollection"><a ng-repeat="item in list.collection" ng-class="{'new-row': $index%2===0}" class="menu-card">
+        <div ui-sref="tab.items-item({itemId: item._id})" class="menu-card-content"><img ng-src="{{item.image}}"/>
+          <div class="menu-card-footer">
+            <div>{{item.name | limitTo:30 }}</div>
+            <div>@{{item.menu_name | limitTo:30 }}</div>
+            <div class="text-left assertive">{{item.stars}}</div>
+          </div>
+        </div></a></ion-list>
+    <ion-list ng-show="list.viewBookmarks"><a ng-repeat="item in list.bookmarks" ng-class="{'new-row': $index%2===0}" class="menu-card">
+        <div ui-sref="tab.items-item({itemId: item._id})" class="menu-card-content"><img ng-src="{{item.image}}"/>
+          <div class="menu-card-footer">
+            <div>{{item.name | limitTo:30 }}</div>
+            <div>@{{item.menu_name | limitTo:30 }}</div>
+            <div class="text-left assertive">{{item.stars}}</div>
+          </div>
+        </div></a></ion-list>
+  </ion-content>
+</ion-view>

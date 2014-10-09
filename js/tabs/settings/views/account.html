@@ -1,0 +1,20 @@
+
+<ion-view title="Account">
+  <ion-content>
+    <ion-list>
+      <label class="item item-input item-floating-label"><span class="input-label">First Name</span>
+        <input type="text" placeholder="First Name" ng-model="account.user.first"/>
+      </label>
+      <label class="item item-input item-floating-label"><span class="input-label">Last Name</span>
+        <input type="text" placeholder="Last Name" ng-model="account.user.last"/>
+      </label>
+      <label class="item item-input item-floating-label"><span class="input-label">Email</span>
+        <input type="text" placeholder="Email" ng-model="account.user.email"/>
+      </label>
+      <label class="item item-input item-floating-label"><span class="input-label">Phone</span>
+        <input type="tel" placeholder="Phone" ng-model="account.user.phone"/>
+      </label>
+      <button ng-click="account.update()" class="button button-assertive button-block">Update</button>
+    </ion-list>
+  </ion-content>
+</ion-view>

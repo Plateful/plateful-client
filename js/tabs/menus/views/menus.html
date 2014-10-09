@@ -1,0 +1,15 @@
+
+<ion-view hide-nav-bar="true" id="places">
+  <div class="bar bar-stable bar-header item-input-inset">
+    <button ng-click="openModal()" class="button button-clear button-assertive">Filter&nbsp&nbsp</button>
+    <label class="item-input-wrapper"><i class="icon ion-ios7-search placeholder-icon"></i>
+      <input type="text" g-places-autocomplete="g-places-autocomplete" ng-model="place" placeholder="Search" class="form-control"/>
+      <!--<div>selection is: {{chosenPlace}}</div>-->
+    </label><a href="#/tab/menus/map" class="button button-clear button-assertive">Map</a>
+  </div>
+  <ion-content class="has-header has-header">
+    <div class="list"><a ng-repeat="location in vm.locations | orderBy: 'dist'" type="item-text-wrap" href="#/tab/menus/menu/{{location._id}}" class="item">
+        <h2>{{location.name}}</h2>
+        <h4 class="text-left">{{location.address + " - " + location.city}}</h4><span class="text-right"><i style="color:grey;" class="icon ion-navigate">&nbsp</i><span>{{location.dist}} mi</span></span></a></div>
+  </ion-content>
+</ion-view>

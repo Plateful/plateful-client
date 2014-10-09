@@ -1,0 +1,24 @@
+
+<ion-view title="{{vm.item.name}}" has-subheader="true">
+  <ion-content>
+    <div class="button-bar"><a href="#/tab/menus/menu/{{vm.item.menu_id}}" class="button button-outline button-option">Menu</a>
+      <button ng-click="vm.reviewItem()" class="button button-outline button-option">Review</button>
+      <button ng-click="vm.interact('collection', vm.has_collection)" ng-class="{ 'active': vm.has_collection }" class="button button-outline button-option">Collect</button>
+      <button ng-click="vm.interact('bookmarks', vm.has_bookmarks)" ng-class="{ 'active': vm.has_bookmarks }" class="button button-outline button-option">Bookmark</button>
+    </div>
+    <ion-list><img ng-src="{{vm.item.image}}" class="full-image"/>
+      <div id="map_canvas">
+        <google-map center="vm.map.center" zoom="vm.map.zoom" draggable="false" options="vm.options">
+          <marker coords="vm.marker.coords" options="vm.marker.options" events="vm.marker.events" idkey="vm.marker.id"></marker>
+        </google-map>
+      </div>
+      <div class="button-bar button-bar-small">
+        <button class="button button-light button-small">Photos</button>
+        <button class="button button-light button-small">Reviews</button>
+      </div>
+    </ion-list>
+    <div ng-repeat="photo in vm.photos" style="width:50%;" class="list card">
+      <div class="item item-image"><img ng-src="{{photo.url}}"/></div>
+    </div>
+  </ion-content>
+</ion-view>

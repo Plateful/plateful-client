@@ -1,0 +1,22 @@
+
+<ion-view title="Login">
+  <ion-content>
+    <form ng-submit="login.nativeLogin()">
+      <ion-list ng-hide="login.isSignedIn">
+        <label class="item item-input"><span class="input-label">Username</span>
+          <input type="text" ng-model="login.username"/>
+        </label>
+        <label class="item item-input"><span class="input-label">Password</span>
+          <input type="password" ng-model="login.password"/>
+        </label>
+      </ion-list>
+      <button ng-click="login.loginModal.hide()" ng-hide="login.isSignedIn" class="button assertive button-block">Login</button>
+    </form>
+    <div ng-hide="login.isSignedIn" class="button-bar">
+      <button ng-click="login.signupModal.show()" class="button button-block button-assertive">Create Account</button>
+      <button ng-click="login.fbLoginFlow()" class="button button-block button-facebook-style">Facebook Login</button>
+    </div>
+    <button ng-click="login.nativeLogout()" ng-show="login.isSignedIn" class="button button-block assertive">Logout</button>
+    <div ng-model="login.statusMessage" style="text-align: center" class="login-status assertive">{{login.statusMessage}}</div>
+  </ion-content>
+</ion-view>
