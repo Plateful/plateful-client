@@ -1,36 +1,11 @@
-var http = require("http"),
-    url = require("url"),
-    path = require("path"),
-    fs = require("fs"),
-    port = 4400;
+var http = require('http');
+var ecstatic = require('ecstatic');
 
-http.createServer(function(request, response) {
-  var uri = url.parse(request.url).pathname
-    , filename = path.join(process.cwd(), uri);
+var staticRoot = './';
+var port = process.env.PORT || 4400;
 
-  path.exists(filename, function(exists) {
-    if(!exists) {
-      response.writeHead(404, {"Content-Type": "text/plain"});
-      response.write("404 Not Found\n");
-      response.end();
-      return;
-    }
+http.createServer(ecstatic({root: staticRoot})).listen(port);
+console.log("HTTP server listening on " + port);
 
-    if (fs.statSync(filename).isDirectory()) filename += '/index.html';
 
-    fs.readFile(filename, "binary", function(err, file) {
-      if(err) {        
-        response.writeHead(500, {"Content-Type": "text/plain"});
-        response.write(err + "\n");
-        response.end();
-        return;
-      }
-
-      response.writeHead(200);
-      response.write(file, "binary");
-      response.end();
-    });
-  });
-}).listen(process.env.PORT || port);
-
-console.log("Static file server running at\n  => http://localhost:" + port + "/\nCTRL + C to shutdown");
+// console.log("Static file server running at\n  => http://localhost:" + port + "/\nCTRL + C to shutdown");
