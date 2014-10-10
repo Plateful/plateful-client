@@ -53,65 +53,6 @@
 
 }).call(this);
 
-(function(){
-  // Takes a number n and creates an array of arrays with each inner array length n.
-  // Used for distributing arrays among rows in views.
-  // Ex: An array of length 10 called with partition:3 will result in an array containing
-  //     4 arrays each of length 3.
-  var partition = function($cacheFactory) {
-    var arrayCache = $cacheFactory('partition');
-    var filter = function(arr, size) {
-      if (!arr) { return; }
-      var newArr = [];
-      for (var i=0; i<arr.length; i+=size) {
-        newArr.push(arr.slice(i, i+size));
-      }
-      // Enter blank space for any remaining columns in the last row.
-      newArr[newArr.length-1].length = size;
-      var cachedParts;
-      var arrString = JSON.stringify(arr);
-      cachedParts = arrayCache.get(arrString+size);
-      if (JSON.stringify(cachedParts) === JSON.stringify(newArr)) {
-        return cachedParts;
-      }
-      arrayCache.put(arrString+size, newArr);
-      return newArr;
-    };
-    return filter;
-  };
-
-  partition.$inject = ['$cacheFactory'];
-
-  angular.module('app.filters', [])
-    .filter('partition', partition);
-
-}).call(this);
-
-
-/*
- *
- *   app.factories all are all the factories that primarily deal with
- *   Restful calls to the server
- *
- *
- *   Architecture Update: Convert all modules | app.factories - to - app.models
- *   SOURCE OF TRUTH
- *
- */
-
-(function() {
-  angular
-    .module('app.models', [
-      'app.model.menu',
-      'app.model.item',
-      'app.model.review',
-      'app.model.list',
-      'app.model.user',
-      'app.model.photo',
-      'app.model.fbLogin'
-    ]);
-}).call(this);
-
 (function() {
   angular.module('app').controller('AppCtrl', [
     '$scope', '$rootScope', '$ionicModal', '$ionicNavBarDelegate', 'CreateReview', 'BackgroundGeo', function($scope, $rootScope, $ionicModal, $ionicNavBarDelegate, CreateReview, BackgroundGeo) {
@@ -379,6 +320,65 @@
 
 }).call(this);
 
+(function(){
+  // Takes a number n and creates an array of arrays with each inner array length n.
+  // Used for distributing arrays among rows in views.
+  // Ex: An array of length 10 called with partition:3 will result in an array containing
+  //     4 arrays each of length 3.
+  var partition = function($cacheFactory) {
+    var arrayCache = $cacheFactory('partition');
+    var filter = function(arr, size) {
+      if (!arr) { return; }
+      var newArr = [];
+      for (var i=0; i<arr.length; i+=size) {
+        newArr.push(arr.slice(i, i+size));
+      }
+      // Enter blank space for any remaining columns in the last row.
+      newArr[newArr.length-1].length = size;
+      var cachedParts;
+      var arrString = JSON.stringify(arr);
+      cachedParts = arrayCache.get(arrString+size);
+      if (JSON.stringify(cachedParts) === JSON.stringify(newArr)) {
+        return cachedParts;
+      }
+      arrayCache.put(arrString+size, newArr);
+      return newArr;
+    };
+    return filter;
+  };
+
+  partition.$inject = ['$cacheFactory'];
+
+  angular.module('app.filters', [])
+    .filter('partition', partition);
+
+}).call(this);
+
+
+/*
+ *
+ *   app.factories all are all the factories that primarily deal with
+ *   Restful calls to the server
+ *
+ *
+ *   Architecture Update: Convert all modules | app.factories - to - app.models
+ *   SOURCE OF TRUTH
+ *
+ */
+
+(function() {
+  angular
+    .module('app.models', [
+      'app.model.menu',
+      'app.model.item',
+      'app.model.review',
+      'app.model.list',
+      'app.model.user',
+      'app.model.photo',
+      'app.model.fbLogin'
+    ]);
+}).call(this);
+
 (function() {
   angular.module('app.services', [
     "app.services.findDistance",
@@ -429,12 +429,972 @@
 
 }).call(this);
 
+/*
+ * angular-google-places-autocomplete
+ *
+ * Copyright (c) 2014 "kuhnza" David Kuhn
+ * Licensed under the MIT license.
+ * https://github.com/kuhnza/angular-google-places-autocomplete/blob/master/LICENSE
+ */
+
+ // 'use strict';
+
+angular.module('googleAutocomplete', [])
+  /**
+   * DI wrapper around global google places library.
+   *
+   * Note: requires the Google Places API to already be loaded on the page.
+   */
+  .factory('googlePlacesApi', ['$window', function ($window) {
+        if (!$window.google) throw 'Global `google` var missing. Did you forget to include the places API script?';
+
+    return $window.google;
+  }])
+
+  /**
+   * Autocomplete directive. Use like this:
+   *
+   * <input type="text" g-places-autocomplete ng-model="myScopeVar" />
+   */
+  .directive('googleAutocomplete',
+        [ '$parse', '$compile', '$timeout', '$document', 'googlePlacesApi',
+        function ($parse, $compile, $timeout, $document, google) {
+
+            return {
+                restrict: 'A',
+                require: '^ngModel',
+                scope: {
+                    model: '=ngModel',
+                    options: '=?',
+                    forceSelection: '=?',
+                    customPlaces: '=?'
+                },
+                controller: ['$scope', function ($scope) {}],
+                link: function ($scope, element, attrs, controller) {
+                    var keymap = {
+                            tab: 9,
+                            enter: 13,
+                            esc: 27,
+                            up: 38,
+                            down: 40
+                        },
+                        hotkeys = [keymap.tab, keymap.enter, keymap.esc, keymap.up, keymap.down],
+                        autocompleteService = new google.maps.places.AutocompleteService(),
+                        placesService = new google.maps.places.PlacesService(element[0]);
+
+                    (function init() {
+                        $scope.query = '';
+                        $scope.predictions = [];
+                        $scope.input = element;
+                        $scope.options = $scope.options || {};
+
+                        initAutocompleteDrawer();
+                        initEvents();
+                        initNgModelController();
+                    }());
+
+                    function initEvents() {
+                        element.bind('keydown', onKeydown);
+                        element.bind('blur', onBlur);
+
+                        $scope.$watch('selected', select);
+                    }
+
+                    function initAutocompleteDrawer() {
+                        // Drawer element used to display predictions
+                        var drawerElement = angular.element('<div g-places-autocomplete-drawer></div>'),
+                            body = angular.element($document[0].body),
+                            $drawer;
+
+                        drawerElement.attr({
+                            input: 'input',
+                            query: 'query',
+                            predictions: 'predictions',
+                            active: 'active',
+                            selected: 'selected'
+                        });
+
+                        $drawer = $compile(drawerElement)($scope);
+                        body.append($drawer);  // Append to DOM
+                    }
+
+                    function initNgModelController() {
+                        controller.$parsers.push(parse);
+                        controller.$formatters.push(format);
+                        controller.$render = render;
+                    }
+
+                    function onKeydown(event) {
+                        if ($scope.predictions.length === 0 || indexOf(hotkeys, event.which) === -1) {
+                            return;
+                        }
+
+                        event.preventDefault();
+
+                        if (event.which === keymap.down) {
+                            $scope.active = ($scope.active + 1) % $scope.predictions.length;
+                            $scope.$digest();
+                        } else if (event.which === keymap.up) {
+                            $scope.active = ($scope.active ? $scope.active : $scope.predictions.length) - 1;
+                            $scope.$digest();
+                        } else if (event.which === 13 || event.which === 9) {
+                            if ($scope.forceSelection) {
+                                $scope.active = ($scope.active === -1) ? 0 : $scope.active;
+                            }
+
+                            $scope.$apply(function () {
+                                $scope.selected = $scope.active;
+
+                                if ($scope.selected === -1) {
+                                    clearPredictions();
+                                }
+                            });
+                        } else if (event.which === 27) {
+                            event.stopPropagation();
+                            clearPredictions();
+                            $scope.$digest();
+                        }
+                    }
+
+                    function onBlur(event) {
+                        if ($scope.predictions.length === 0) {
+                            return;
+                        }
+
+                        if ($scope.forceSelection) {
+                            $scope.selected = ($scope.selected === -1) ? 0 : $scope.selected;
+                        }
+
+                        $scope.$digest();
+
+                        $scope.$apply(function () {
+                            if ($scope.selected === -1) {
+                                clearPredictions();
+                            }
+                        });
+                    }
+
+                    function select() {
+                        var prediction;
+
+                        prediction = $scope.predictions[$scope.selected];
+                        if (!prediction) return;
+
+                        if (prediction.is_custom) {
+                            $scope.model = prediction.place;
+                            $scope.$emit('g-places-autocomplete:select', prediction.place);
+                        } else {
+                            placesService.getDetails({ placeId: prediction.place_id }, function (place, status) {
+                                if (status == google.maps.places.PlacesServiceStatus.OK) {
+                                    $scope.$apply(function () {
+                                        $scope.model = place;
+                                        $scope.$emit('g-places-autocomplete:select', place);
+                                    });
+                                }
+                            });
+                        }
+
+                        clearPredictions();
+                    }
+
+                    function parse(viewValue) {
+                        var request;
+
+                        if (!(viewValue && isString(viewValue))) return viewValue;
+
+                        $scope.query = viewValue;
+
+                        request = angular.extend({ input: viewValue }, $scope.options);
+                        autocompleteService.getPlacePredictions(request, function (predictions, status) {
+                            $scope.$apply(function () {
+                                var customPlacePredictions;
+
+                                clearPredictions();
+
+                                if ($scope.customPlaces) {
+                                    customPlacePredictions = getCustomPlacePredictions($scope.query);
+                                    $scope.predictions.push.apply($scope.predictions, customPlacePredictions);
+                                }
+
+                                if (status == google.maps.places.PlacesServiceStatus.OK) {
+                                    $scope.predictions.push.apply($scope.predictions, predictions);
+                                }
+
+                                if ($scope.predictions.length > 5) {
+                                    $scope.predictions.length = 5;  // trim predictions down to size
+                                }
+                            });
+                        });
+
+                        return viewValue;
+                    }
+
+                    function format(modelValue) {
+                        var viewValue = "";
+
+                        if (isString(modelValue)) {
+                            viewValue = modelValue;
+                        } else if (isObject(modelValue)) {
+                            viewValue = modelValue.formatted_address;
+                        }
+
+                        return viewValue;
+                    }
+
+                    function render() {
+                        return element.val(controller.$viewValue);
+                    }
+
+                    function clearPredictions() {
+                        $scope.active = -1;
+                        $scope.selected = -1;
+                        $scope.predictions.length = 0;
+                    }
+
+                    function getCustomPlacePredictions(query) {
+                        var predictions = [],
+                            place, match, i;
+
+                        for (i = 0; i < $scope.customPlaces.length; i++) {
+                            place = $scope.customPlaces[i];
+
+                            match = getCustomPlaceMatches(query, place);
+                            if (match.matched_substrings.length > 0) {
+                                predictions.push({
+                                    is_custom: true,
+                                    custom_prediction_label: place.custom_prediction_label || '(Custom Non-Google Result)',  // required by https://developers.google.com/maps/terms § 10.1.1 (d)
+                                    description: place.formatted_address,
+                                    place: place,
+                                    matched_substrings: match.matched_substrings,
+                                    terms: match.terms
+                                });
+                            }
+                        }
+
+                        return predictions;
+                    }
+
+                    function getCustomPlaceMatches(query, place) {
+                        var q = query + '',  // make a copy so we don't interfere with subsequent matches
+                            terms = [],
+                            matched_substrings = [],
+                            fragment,
+                            termFragments,
+                            i;
+
+                        termFragments = place.formatted_address.split(',');
+                        for (i = 0; i < termFragments.length; i++) {
+                            fragment = termFragments[i].trim();
+
+                            if (q.length > 0) {
+                                if (fragment.length >= q.length) {
+                                    if (startsWith(fragment, q)) {
+                                        matched_substrings.push({ length: q.length, offset: i });
+                                    }
+                                    q = '';  // no more matching to do
+                                } else {
+                                    if (startsWith(q, fragment)) {
+                                        matched_substrings.push({ length: fragment.length, offset: i });
+                                        q = q.replace(fragment, '').trim();
+                                    } else {
+                                        q = '';  // no more matching to do
+                                    }
+                                }
+                            }
+
+                            terms.push({
+                                value: fragment,
+                                offset: place.formatted_address.indexOf(fragment)
+                            });
+                        }
+
+                        return {
+                            matched_substrings: matched_substrings,
+                            terms: terms
+                        };
+                    }
+
+                    function isString(val) {
+                        return toString.call(val) == '[object String]';
+                    }
+
+                    function isObject(val) {
+                        return toString.call(val) == '[object Object]';
+                    }
+
+                    function indexOf(array, item) {
+                        var i, length;
+
+                        if (array == null) return -1;
+
+                        length = array.length;
+                        for (i = 0; i < length; i++) {
+                            if (array[i] === item) return i;
+                        }
+                        return -1;
+                    }
+
+                    function startsWith(string1, string2) {
+                        return string1.lastIndexOf(string2, 0) === 0;
+                    }
+                }
+            }
+        }
+    ])
+
+
+    .directive('gPlacesAutocompleteDrawer', ['$window', '$document', function ($window, $document) {
+        var TEMPLATE = [
+            '<div class="pac-container" ng-if="isOpen()" ng-style="{top: position.top+\'px\', left: position.left+\'px\', width: position.width+\'px\'}" style="display: block;" role="listbox" aria-hidden="{{!isOpen()}}">',
+            '  <div class="pac-item" g-places-autocomplete-prediction index="$index" prediction="prediction" query="query"',
+            '       ng-repeat="prediction in predictions track by $index" ng-class="{\'pac-item-selected\': isActive($index) }"',
+            '       ng-mouseenter="selectActive($index)" ng-click="selectPrediction($index)" role="option" id="{{prediction.id}}">',
+            '  </div>',
+            '</div>'
+        ];
+
+        return {
+            restrict: 'A',
+            scope:{
+                input: '=',
+                query: '=',
+                predictions: '=',
+                active: '=',
+                selected: '='
+            },
+            template: TEMPLATE.join(''),
+            link: function ($scope, element) {
+                element.bind('mousedown', function (event) {
+                    event.preventDefault();  // prevent blur event from firing when clicking selection
+                });
+
+                $scope.isOpen = function () {
+                    return $scope.predictions.length > 0;
+                };
+
+                $scope.isActive = function (index) {
+                    return $scope.active === index;
+                };
+
+                $scope.selectActive = function (index) {
+                    $scope.active = index;
+                };
+
+                $scope.selectPrediction = function (index) {
+                    $scope.selected = index;
+                };
+
+                $scope.$watch('predictions', function () {
+                    $scope.position = getDrawerPosition($scope.input);
+                });
+
+                function getDrawerPosition(element) {
+                    var domEl = element[0],
+                        rect = domEl.getBoundingClientRect(),
+                        docEl = $document[0].documentElement,
+                        body = $document[0].body,
+                        scrollTop = $window.pageYOffset || docEl.scrollTop || body.scrollTop,
+                        scrollLeft = $window.pageXOffset || docEl.scrollLeft || body.scrollLeft;
+
+                    return {
+                        width: rect.width,
+                        height: rect.height,
+                        top: rect.top + rect.height + scrollTop,
+                        left: rect.left + scrollLeft
+                    };
+                }
+            }
+        }
+    }])
+
+    .directive('gPlacesAutocompletePrediction', [function () {
+        var TEMPLATE = [
+            '<span class="pac-icon pac-icon-marker"></span>',
+            '<span class="pac-item-query" ng-bind-html="prediction | highlightMatched"></span>',
+            '<span ng-repeat="term in prediction.terms | unmatchedTermsOnly:prediction">{{term.value | trailingComma:!$last}}&nbsp;</span>',
+            '<span class="custom-prediction-label" ng-if="prediction.is_custom">&nbsp;{{prediction.custom_prediction_label}}</span>'
+        ];
+
+        return {
+            restrict: 'A',
+            scope:{
+                index:'=',
+                prediction:'=',
+                query:'='
+            },
+            template: TEMPLATE.join('')
+        }
+    }])
+
+    .filter('highlightMatched', ['$sce', function ($sce) {
+        return function (prediction) {
+            var matchedPortion = '',
+                unmatchedPortion = '',
+                matched;
+
+            if (prediction.matched_substrings.length > 0 && prediction.terms.length > 0) {
+                matched = prediction.matched_substrings[0];
+                matchedPortion = prediction.terms[0].value.substr(matched.offset, matched.length);
+                unmatchedPortion = prediction.terms[0].value.substr(matched.offset + matched.length);
+            }
+
+            return $sce.trustAsHtml('<span class="pac-matched">' + matchedPortion + '</span>' + unmatchedPortion);
+        }
+    }])
+
+    .filter('unmatchedTermsOnly', [function () {
+        return function (terms, prediction) {
+            var i, term, filtered = [];
+
+            for (i = 0; i < terms.length; i++) {
+                term = terms[i];
+                if (prediction.matched_substrings.length > 0 && term.offset > prediction.matched_substrings[0].length) {
+                    filtered.push(term);
+                }
+            }
+
+            return filtered;
+        }
+    }])
+
+    .filter('trailingComma', [function () {
+        return function (input, condition) {
+            return (condition) ? input + ',' : input;
+        }
+    }]);
+
+// (function() {
+//
+//     var googleItems = function($ionicTemplateLoader, $ionicBackdrop, $q, $timeout, $rootScope, $document, ngGPlacesAPI, MenusData){
+//       return {
+//         require: '?ngModel',
+//         restrict: 'E',
+//         template: '<input type="text" readonly="readonly" class="ion-google-place" autocomplete="off">',
+//         replace: true,
+//         link: function(scope, element, attrs, ngModel) {
+//           var POPUP_TPL, geocoder, popupPromise, searchEventTimeout;
+//           scope.locations = [];
+//           scope.locate = window.currLocation.coords;
+//           geocoder = new google.maps.Geocoder();
+//           searchEventTimeout = void 0;
+//           POPUP_TPL = ['<div class="ion-google-place-container">', '<div class="bar bar-header bar-positive item-input-inset">', '<label class="item-input-wrapper">', '<i class="icon ion-ios7-search placeholder-icon"></i>', '<input id="searchQuery" class="google-place-search" type="search" ng-model="searchQuery" placeholder="Enter an address, place or ZIP code">', '</label>', '<button class="button button-clear">', 'Cancel', '</button>', '</div>', '<ion-content class="has-header has-header">', '<ion-list>', '<ion-item ng-repeat="location in items" type="item-text-wrap" ng-click="selectLocation(location)">', '<h2>{{location.name}}</h2>', '</ion-item>', '</ion-list>', '</ion-content>', '</div>'].join('');
+//           popupPromise = $ionicTemplateLoader.compile({
+//             template: POPUP_TPL,
+//             scope: scope,
+//             appendTo: $document[0].body
+//           });
+//           var pyrmont = new google.maps.LatLng(scope.locate.latitude,scope.locate.longitude);
+//
+//           map = new google.maps.Map(document.getElementById('map'), {
+//               center: pyrmont,
+//               zoom: 15
+//             });
+//
+//
+//           popupPromise.then(function(el) {
+//             var onCancel, onClick, searchInputElement;
+//             searchInputElement = angular.element(el.element.find('input'));
+//             scope.selectLocation = function(location) {
+//               ngModel.$setViewValue(location);
+//               ngModel.$render();
+//               el.element.css('display', 'none');
+//               return $ionicBackdrop.release();
+//             };
+//             scope.$watch('searchQuery', function(query) {
+//               if (searchEventTimeout) {
+//                 $timeout.cancel(searchEventTimeout);
+//               }
+//               return searchEventTimeout = $timeout(function() {
+//                 if (!query) {
+//                   return;
+//                 }
+//
+//                 var request = {
+//                   query: query,
+//                   location: pyrmont,
+//                   radius: '500',
+//                   types: ['food']
+//                 };
+//
+//                 service = new google.maps.places.PlacesService(map);
+//                 return service.textSearch(request, callback);
+//
+//                 function callback(results, status) {
+//                   if (status == google.maps.places.PlacesServiceStatus.OK) {
+//                     scope.items = results
+//                     console.log(results);
+//                     return scope.vm.items = results;
+//                     // for (var i = 0; i < scope.vm.items.length; i++) {
+//
+//                       // scope.vm.items[i].dist = findDistance.get( scope.vm.items[i].geometry.location.k, scope.vm.items[i].geometry.location.B )
+//                       // scope.items[i].stars = makeStars.get(scope.vm.items[i].rating)
+//                       // createMarker(results[i]);
+//                       // console.log(place);
+//                     // }
+//                   }
+//                 }
+//
+//               //   return ngGPlacesAPI.nearbySearch({
+//               //     nearbySearchKeys: ['geometry'],
+//               //     name: query,
+//               //     reference: query,
+//               //     latitude: scope.locate.latitude,
+//               //     longitude: scope.locate.longitude
+//               //   }).then(function(data) {
+//               //     MenusData.set(data);
+//               //     console.log(data);
+//               //     scope.locations = data;
+//               //     return scope.vm.locations = data;
+//               //   });
+//               }, 350);
+//             });
+//             onClick = function(e) {
+//               e.preventDefault();
+//               e.stopPropagation();
+//               $ionicBackdrop.retain();
+//               el.element.css('display', 'block');
+//               searchInputElement[0].focus();
+//               return setTimeout(function() {
+//                 return searchInputElement[0].focus();
+//               }, 0);
+//             };
+//             onCancel = function(e) {
+//               scope.searchQuery = '';
+//               $ionicBackdrop.release();
+//               return el.element.css('display', 'none');
+//             };
+//             element.bind('click', onClick);
+//             element.bind('touchend', onClick);
+//             return el.element.find('button').bind('click', onCancel);
+//           });
+//           if (attrs.placeholder) {
+//             element.attr('placeholder', attrs.placeholder);
+//           }
+//           ngModel.$formatters.unshift(function(modelValue) {
+//             if (!modelValue) {
+//               return '';
+//             }
+//             return modelValue;
+//           });
+//           ngModel.$parsers.unshift(function(viewValue) {
+//             return viewValue;
+//           });
+//           return ngModel.$render = function() {
+//             if (!ngModel.$viewValue) {
+//               return element.val('');
+//             } else {
+//               return element.val(ngModel.$viewValue.formatted_address || '');
+//             }
+//           };
+//         }
+//       };
+//     }
+//
+//
+// googleItems.$inject = ['$ionicTemplateLoader', '$ionicBackdrop', '$q', '$timeout', '$rootScope', '$document', 'ngGPlacesAPI', 'MenusData']
+//
+// angular
+//   .module('googleItems', [])
+//   .directive('googleItems', googleItems)
+// }).call(this);
+//
+// //
+// //
+// // function initialize(lat, lng) {
+// //   var pyrmont = new google.maps.LatLng(lat,lng);
+// //
+// //   map = new google.maps.Map(document.getElementById('map'), {
+// //       center: pyrmont,
+// //       zoom: 15
+// //     });
+// //
+// //   var request = {
+// //     query: "burgers",
+// //     location: pyrmont,
+// //     radius: '500',
+// //     types: ['food']
+// //   };
+// //
+// //   service = new google.maps.places.PlacesService(map);
+// //   service.textSearch(request, callback);
+// // }
+// //
+// // function callback(results, status) {
+// //   if (status == google.maps.places.PlacesServiceStatus.OK) {
+// //     vm.items = results;
+// //     for (var i = 0; i < vm.items.length; i++) {
+// //
+// //       vm.items[i].dist = findDistance.get( vm.items[i].geometry.location.k, vm.items[i].geometry.location.B )
+// //       vm.items[i].stars = makeStars.get(vm.items[i].rating)
+// //       // createMarker(results[i]);
+// //       // console.log(place);
+// //     }
+// //   }
+// // }
+
+// (function(){
+angular.module( "ngAutocomplete", [])
+  .directive('ngAutocomplete', function($location) {
+    return {
+      require: 'ngModel',
+      scope: {
+        ngModel: '=',
+        options: '=?',
+        details: '=?'
+      },
+
+      link: function(scope, element, attrs, controller) {
+
+        //options for autocomplete
+        var opts;
+        var watchEnter = false;
+        //convert options provided to opts
+        var initOpts = function() {
+
+          opts = {};
+          if (scope.options) {
+
+            if (scope.options.watchEnter !== true) {
+              watchEnter = false;
+            } else {
+              watchEnter = true;
+            }
+
+            if (scope.options.types) {
+              opts.types = [];
+              opts.types.push(scope.options.types);
+              scope.gPlace.setTypes(opts.types);
+            } else {
+              scope.gPlace.setTypes([]);
+            }
+
+            if (scope.options.bounds) {
+              opts.bounds = scope.options.bounds;
+              scope.gPlace.setBounds(opts.bounds);
+            } else {
+              scope.gPlace.setBounds(null);
+            }
+
+            if (scope.options.country) {
+              opts.componentRestrictions = {
+                country: scope.options.country
+              };
+              scope.gPlace.setComponentRestrictions(opts.componentRestrictions);
+            } else {
+              scope.gPlace.setComponentRestrictions(null);
+            }
+          }
+        };
+
+        if (scope.gPlace === undefined) {
+          scope.gPlace = new google.maps.places.Autocomplete(element[0], {});
+        }
+        google.maps.event.addListener(scope.gPlace, 'place_changed', function() {
+          var result = scope.gPlace.getPlace();
+
+          if (result !== undefined) {
+            if (result.address_components !== undefined) {
+
+              scope.$apply(function() {
+
+                scope.details = result;
+                console.log(result);
+                // $location.path('/tab/menus/menu/' + scope.details.place_id);
+
+                controller.$setViewValue(element.val());
+              });
+            }
+            else {
+              if (watchEnter) {
+                getPlace(result);
+              }
+            }
+          }
+        });
+
+        //function to get retrieve the autocompletes first result using the AutocompleteService
+        var getPlace = function(result) {
+          var autocompleteService = new google.maps.places.AutocompleteService();
+          console.log(result);
+          if (result.name.length > 0){
+            autocompleteService.getPlacePredictions(
+              {
+                input: result.name,
+                offset: result.name.length
+              },
+              function listentoresult(list, status) {
+
+                if(list === null || list.length === 0) {
+
+                  scope.$apply(function() {
+                    scope.details = null;
+                  });
+
+                } else {
+
+                  var placesService = new google.maps.places.PlacesService(element[0]);
+                  placesService.getDetails(
+                    {'reference': list[0].reference},
+                    function detailsresult(detailsResult, placesServiceStatus) {
+                      console.log(detailsResult)
+                      if (placesServiceStatus == google.maps.GeocoderStatus.OK) {
+                        scope.$apply(function() {
+
+                          controller.$setViewValue(detailsResult.formatted_address);
+                          element.val(detailsResult.formatted_address);
+
+                          scope.details = detailsResult;
+                          scope.vm.locations = detailsResult;
+
+
+                          //on focusout the value reverts, need to set it again.
+                          var watchFocusOut = element.on('focusout', function(event) {
+                            element.val(detailsResult.formatted_address);
+                            element.unbind('focusout');
+                          });
+
+                        });
+                      }
+                    }
+                  );
+                }
+              });
+          }
+        };
+
+        controller.$render = function () {
+          var location = controller.$viewValue;
+          element.val(location);
+        };
+
+        //watch options provided to directive
+        scope.watchOptions = function () {
+          return scope.options;
+        };
+        scope.$watch(scope.watchOptions, function () {
+          initOpts();
+        }, true);
+
+      }
+
+
+
+    };
+  })
+
+.directive('disableTap', function($timeout) {
+  return {
+    link: function() {
+
+      $timeout(function() {
+        document.querySelector('.pac-container').setAttribute('data-tap-disabled', 'true');
+      },500);
+    }
+  };
+});
+// }).call(this)
+
+(function() {
+  angular.module('ngBackImg', []).directive('ngBackImg', function() {
+    return function(scope, element, attrs){
+      var url = attrs.ngBackImg;
+      element.css({
+        'background-image': 'url(' + url + ')',
+        'background-size' : 'cover',
+        'width': '100%',
+        'height': '150px'
+      });
+    };
+  });
+
+}).call(this);
+
+(function() {
+  angular.module('ngFadeIn', []).directive('ngFadeIn', function() {
+    return {
+      restrict: 'A',
+      link: function(scope, element, attrs, ngModel) {
+        TweenLite.to(element, 0, {autoAlpha:0});
+        TweenLite.to(element, 2.5, {autoAlpha:1});
+      }
+    };
+  });
+
+}).call(this);
+
+(function() {
+  angular.module('ngPlaces', []).directive('ngPlaces', [
+    '$ionicTemplateLoader', '$ionicBackdrop', '$q', '$timeout', '$rootScope', '$document', 'ngGPlacesAPI', 'MenusData', function($ionicTemplateLoader, $ionicBackdrop, $q, $timeout, $rootScope, $document, ngGPlacesAPI, MenusData) {
+      return {
+        require: '?ngModel',
+        restrict: 'E',
+        template: '<input type="text" readonly="readonly" class="ion-google-place" autocomplete="off">',
+        replace: true,
+        link: function(scope, element, attrs, ngModel) {
+          var POPUP_TPL, geocoder, popupPromise, searchEventTimeout;
+          scope.locations = [];
+          scope.locate = window.currLocation.coords;
+          geocoder = new google.maps.Geocoder();
+          searchEventTimeout = void 0;
+          POPUP_TPL = ['<div class="ion-google-place-container">', '<div class="bar bar-header bar-positive item-input-inset">', '<label class="item-input-wrapper">', '<i class="icon ion-ios7-search placeholder-icon"></i>', '<input id="searchQuery" class="google-place-search" type="search" ng-model="searchQuery" placeholder="Enter an address, place or ZIP code">', '</label>', '<button class="button button-clear">', 'Cancel', '</button>', '</div>', '<ion-content class="has-header has-header">', '<ion-list>', '<ion-item ng-repeat="location in locations" type="item-text-wrap" ng-click="selectLocation(location)">', '<h2>{{location.name}}</h2>', '</ion-item>', '</ion-list>', '</ion-content>', '</div>'].join('');
+          popupPromise = $ionicTemplateLoader.compile({
+            template: POPUP_TPL,
+            scope: scope,
+            appendTo: $document[0].body
+          });
+          popupPromise.then(function(el) {
+            var onCancel, onClick, searchInputElement;
+            searchInputElement = angular.element(el.element.find('input'));
+            scope.selectLocation = function(location) {
+              ngModel.$setViewValue(location);
+              ngModel.$render();
+              el.element.css('display', 'none');
+              return $ionicBackdrop.release();
+            };
+            scope.$watch('searchQuery', function(query) {
+              if (searchEventTimeout) {
+                $timeout.cancel(searchEventTimeout);
+              }
+              return searchEventTimeout = $timeout(function() {
+                if (!query) {
+                  return;
+                }
+                return ngGPlacesAPI.nearbySearch({
+                  nearbySearchKeys: ['geometry'],
+                  name: query,
+                  reference: query,
+                  latitude: scope.locate.latitude,
+                  longitude: scope.locate.longitude
+                }).then(function(data) {
+                  MenusData.set(data);
+                  console.log(data);
+                  scope.locations = data;
+                  return scope.vm.locations = data;
+                });
+              }, 350);
+            });
+            onClick = function(e) {
+              e.preventDefault();
+              e.stopPropagation();
+              $ionicBackdrop.retain();
+              el.element.css('display', 'block');
+              searchInputElement[0].focus();
+              return setTimeout(function() {
+                return searchInputElement[0].focus();
+              }, 0);
+            };
+            onCancel = function(e) {
+              scope.searchQuery = '';
+              $ionicBackdrop.release();
+              return el.element.css('display', 'none');
+            };
+            element.bind('click', onClick);
+            element.bind('touchend', onClick);
+            return el.element.find('button').bind('click', onCancel);
+          });
+          if (attrs.placeholder) {
+            element.attr('placeholder', attrs.placeholder);
+          }
+          ngModel.$formatters.unshift(function(modelValue) {
+            if (!modelValue) {
+              return '';
+            }
+            return modelValue;
+          });
+          ngModel.$parsers.unshift(function(viewValue) {
+            return viewValue;
+          });
+          return ngModel.$render = function() {
+            if (!ngModel.$viewValue) {
+              return element.val('');
+            } else {
+              return element.val(ngModel.$viewValue.formatted_address || '');
+            }
+          };
+        }
+      };
+    }
+  ]);
+
+}).call(this);
+
+(function() {
+  angular.module('ngRater', []).directive('ngRater', function() {
+    return {
+      restrict: 'E',
+      template: '<div class="button-bar"> <button class="button button-clear button-icon icon ion-ios7-star" ng-repeat="btn in buttons" ng-click="rating = $index" ng-class="{\'button-energized\': rating >= $index}"></button></div>'
+    };
+  });
+
+}).call(this);
+
+(function() {
+  angular.module('ngSelect', []).directive('ngMultiSelect', function() {
+    return {
+      restrict: 'E',
+      template: '<div class="button-bar"><button class="button button-small "ng-repeat="option in options" ng-class="{\'active\': option.active === true}" ng-click="activate(option.id)"> {{option.title}}</button></div>',
+      scope: {
+        multi: '=multiple',
+        options: '=options'
+      },
+      controller: function($scope) {
+        return $scope.activate = function(num) {
+          var item, _i, _len, _ref, _results;
+          _ref = $scope.options;
+          _results = [];
+          for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+            item = _ref[_i];
+            if (item.id === num) {
+              _results.push(item.active = !item.active);
+            } else {
+              _results.push(void 0);
+            }
+          }
+          return _results;
+        };
+      }
+    };
+  }).directive('ngSingleSelect', function() {
+    return {
+      restrict: 'E',
+      template: '<div class="button-bar"><button class="button button-small "ng-repeat="option in options" ng-class="{\'active\': option.active === true}" ng-click="activate(option.id, $index)"> {{option.title}}</button></div>',
+      scope: {
+        multi: '=multiple',
+        options: '=options'
+      },
+      controller: function($scope) {
+        $scope.active = false;
+        return $scope.activate = function(num, index) {
+          var item, _i, _len, _ref, _results;
+          if ($scope.options[index].active === true) {
+            return $scope.options[index].active = !$scope.options[index].active;
+          } else {
+            $scope.options[index].active = !$scope.options[index].active;
+            _ref = $scope.options;
+            _results = [];
+            for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+              item = _ref[_i];
+              if (item.id !== $scope.options[index].id) {
+                _results.push(item.active = !$scope.options[index].active);
+              } else {
+                _results.push(void 0);
+              }
+            }
+            return _results;
+          }
+        };
+      }
+    };
+  });
+
+}).call(this);
+
 (function() {
 
   var FbLogin;
   FbLogin = function(Restangular, $q, Auth, User) {
     // Defaults to sessionStorage for storing the Facebook token
-    openFB.init({appId: '1495225764050843'});
+    openFB.init({appId: '571600419638677'});
     console.log("i'm in");
     FbUser = Restangular.all('users');
 
@@ -1262,966 +2222,6 @@
 
 }).call(this);
 
-// (function() {
-//
-//     var googleItems = function($ionicTemplateLoader, $ionicBackdrop, $q, $timeout, $rootScope, $document, ngGPlacesAPI, MenusData){
-//       return {
-//         require: '?ngModel',
-//         restrict: 'E',
-//         template: '<input type="text" readonly="readonly" class="ion-google-place" autocomplete="off">',
-//         replace: true,
-//         link: function(scope, element, attrs, ngModel) {
-//           var POPUP_TPL, geocoder, popupPromise, searchEventTimeout;
-//           scope.locations = [];
-//           scope.locate = window.currLocation.coords;
-//           geocoder = new google.maps.Geocoder();
-//           searchEventTimeout = void 0;
-//           POPUP_TPL = ['<div class="ion-google-place-container">', '<div class="bar bar-header bar-positive item-input-inset">', '<label class="item-input-wrapper">', '<i class="icon ion-ios7-search placeholder-icon"></i>', '<input id="searchQuery" class="google-place-search" type="search" ng-model="searchQuery" placeholder="Enter an address, place or ZIP code">', '</label>', '<button class="button button-clear">', 'Cancel', '</button>', '</div>', '<ion-content class="has-header has-header">', '<ion-list>', '<ion-item ng-repeat="location in items" type="item-text-wrap" ng-click="selectLocation(location)">', '<h2>{{location.name}}</h2>', '</ion-item>', '</ion-list>', '</ion-content>', '</div>'].join('');
-//           popupPromise = $ionicTemplateLoader.compile({
-//             template: POPUP_TPL,
-//             scope: scope,
-//             appendTo: $document[0].body
-//           });
-//           var pyrmont = new google.maps.LatLng(scope.locate.latitude,scope.locate.longitude);
-//
-//           map = new google.maps.Map(document.getElementById('map'), {
-//               center: pyrmont,
-//               zoom: 15
-//             });
-//
-//
-//           popupPromise.then(function(el) {
-//             var onCancel, onClick, searchInputElement;
-//             searchInputElement = angular.element(el.element.find('input'));
-//             scope.selectLocation = function(location) {
-//               ngModel.$setViewValue(location);
-//               ngModel.$render();
-//               el.element.css('display', 'none');
-//               return $ionicBackdrop.release();
-//             };
-//             scope.$watch('searchQuery', function(query) {
-//               if (searchEventTimeout) {
-//                 $timeout.cancel(searchEventTimeout);
-//               }
-//               return searchEventTimeout = $timeout(function() {
-//                 if (!query) {
-//                   return;
-//                 }
-//
-//                 var request = {
-//                   query: query,
-//                   location: pyrmont,
-//                   radius: '500',
-//                   types: ['food']
-//                 };
-//
-//                 service = new google.maps.places.PlacesService(map);
-//                 return service.textSearch(request, callback);
-//
-//                 function callback(results, status) {
-//                   if (status == google.maps.places.PlacesServiceStatus.OK) {
-//                     scope.items = results
-//                     console.log(results);
-//                     return scope.vm.items = results;
-//                     // for (var i = 0; i < scope.vm.items.length; i++) {
-//
-//                       // scope.vm.items[i].dist = findDistance.get( scope.vm.items[i].geometry.location.k, scope.vm.items[i].geometry.location.B )
-//                       // scope.items[i].stars = makeStars.get(scope.vm.items[i].rating)
-//                       // createMarker(results[i]);
-//                       // console.log(place);
-//                     // }
-//                   }
-//                 }
-//
-//               //   return ngGPlacesAPI.nearbySearch({
-//               //     nearbySearchKeys: ['geometry'],
-//               //     name: query,
-//               //     reference: query,
-//               //     latitude: scope.locate.latitude,
-//               //     longitude: scope.locate.longitude
-//               //   }).then(function(data) {
-//               //     MenusData.set(data);
-//               //     console.log(data);
-//               //     scope.locations = data;
-//               //     return scope.vm.locations = data;
-//               //   });
-//               }, 350);
-//             });
-//             onClick = function(e) {
-//               e.preventDefault();
-//               e.stopPropagation();
-//               $ionicBackdrop.retain();
-//               el.element.css('display', 'block');
-//               searchInputElement[0].focus();
-//               return setTimeout(function() {
-//                 return searchInputElement[0].focus();
-//               }, 0);
-//             };
-//             onCancel = function(e) {
-//               scope.searchQuery = '';
-//               $ionicBackdrop.release();
-//               return el.element.css('display', 'none');
-//             };
-//             element.bind('click', onClick);
-//             element.bind('touchend', onClick);
-//             return el.element.find('button').bind('click', onCancel);
-//           });
-//           if (attrs.placeholder) {
-//             element.attr('placeholder', attrs.placeholder);
-//           }
-//           ngModel.$formatters.unshift(function(modelValue) {
-//             if (!modelValue) {
-//               return '';
-//             }
-//             return modelValue;
-//           });
-//           ngModel.$parsers.unshift(function(viewValue) {
-//             return viewValue;
-//           });
-//           return ngModel.$render = function() {
-//             if (!ngModel.$viewValue) {
-//               return element.val('');
-//             } else {
-//               return element.val(ngModel.$viewValue.formatted_address || '');
-//             }
-//           };
-//         }
-//       };
-//     }
-//
-//
-// googleItems.$inject = ['$ionicTemplateLoader', '$ionicBackdrop', '$q', '$timeout', '$rootScope', '$document', 'ngGPlacesAPI', 'MenusData']
-//
-// angular
-//   .module('googleItems', [])
-//   .directive('googleItems', googleItems)
-// }).call(this);
-//
-// //
-// //
-// // function initialize(lat, lng) {
-// //   var pyrmont = new google.maps.LatLng(lat,lng);
-// //
-// //   map = new google.maps.Map(document.getElementById('map'), {
-// //       center: pyrmont,
-// //       zoom: 15
-// //     });
-// //
-// //   var request = {
-// //     query: "burgers",
-// //     location: pyrmont,
-// //     radius: '500',
-// //     types: ['food']
-// //   };
-// //
-// //   service = new google.maps.places.PlacesService(map);
-// //   service.textSearch(request, callback);
-// // }
-// //
-// // function callback(results, status) {
-// //   if (status == google.maps.places.PlacesServiceStatus.OK) {
-// //     vm.items = results;
-// //     for (var i = 0; i < vm.items.length; i++) {
-// //
-// //       vm.items[i].dist = findDistance.get( vm.items[i].geometry.location.k, vm.items[i].geometry.location.B )
-// //       vm.items[i].stars = makeStars.get(vm.items[i].rating)
-// //       // createMarker(results[i]);
-// //       // console.log(place);
-// //     }
-// //   }
-// // }
-
-// (function(){
-angular.module( "ngAutocomplete", [])
-  .directive('ngAutocomplete', function($location) {
-    return {
-      require: 'ngModel',
-      scope: {
-        ngModel: '=',
-        options: '=?',
-        details: '=?'
-      },
-
-      link: function(scope, element, attrs, controller) {
-
-        //options for autocomplete
-        var opts;
-        var watchEnter = false;
-        //convert options provided to opts
-        var initOpts = function() {
-
-          opts = {};
-          if (scope.options) {
-
-            if (scope.options.watchEnter !== true) {
-              watchEnter = false;
-            } else {
-              watchEnter = true;
-            }
-
-            if (scope.options.types) {
-              opts.types = [];
-              opts.types.push(scope.options.types);
-              scope.gPlace.setTypes(opts.types);
-            } else {
-              scope.gPlace.setTypes([]);
-            }
-
-            if (scope.options.bounds) {
-              opts.bounds = scope.options.bounds;
-              scope.gPlace.setBounds(opts.bounds);
-            } else {
-              scope.gPlace.setBounds(null);
-            }
-
-            if (scope.options.country) {
-              opts.componentRestrictions = {
-                country: scope.options.country
-              };
-              scope.gPlace.setComponentRestrictions(opts.componentRestrictions);
-            } else {
-              scope.gPlace.setComponentRestrictions(null);
-            }
-          }
-        };
-
-        if (scope.gPlace === undefined) {
-          scope.gPlace = new google.maps.places.Autocomplete(element[0], {});
-        }
-        google.maps.event.addListener(scope.gPlace, 'place_changed', function() {
-          var result = scope.gPlace.getPlace();
-
-          if (result !== undefined) {
-            if (result.address_components !== undefined) {
-
-              scope.$apply(function() {
-
-                scope.details = result;
-                console.log(result);
-                // $location.path('/tab/menus/menu/' + scope.details.place_id);
-
-                controller.$setViewValue(element.val());
-              });
-            }
-            else {
-              if (watchEnter) {
-                getPlace(result);
-              }
-            }
-          }
-        });
-
-        //function to get retrieve the autocompletes first result using the AutocompleteService
-        var getPlace = function(result) {
-          var autocompleteService = new google.maps.places.AutocompleteService();
-          console.log(result);
-          if (result.name.length > 0){
-            autocompleteService.getPlacePredictions(
-              {
-                input: result.name,
-                offset: result.name.length
-              },
-              function listentoresult(list, status) {
-
-                if(list === null || list.length === 0) {
-
-                  scope.$apply(function() {
-                    scope.details = null;
-                  });
-
-                } else {
-
-                  var placesService = new google.maps.places.PlacesService(element[0]);
-                  placesService.getDetails(
-                    {'reference': list[0].reference},
-                    function detailsresult(detailsResult, placesServiceStatus) {
-                      console.log(detailsResult)
-                      if (placesServiceStatus == google.maps.GeocoderStatus.OK) {
-                        scope.$apply(function() {
-
-                          controller.$setViewValue(detailsResult.formatted_address);
-                          element.val(detailsResult.formatted_address);
-
-                          scope.details = detailsResult;
-                          scope.vm.locations = detailsResult;
-
-
-                          //on focusout the value reverts, need to set it again.
-                          var watchFocusOut = element.on('focusout', function(event) {
-                            element.val(detailsResult.formatted_address);
-                            element.unbind('focusout');
-                          });
-
-                        });
-                      }
-                    }
-                  );
-                }
-              });
-          }
-        };
-
-        controller.$render = function () {
-          var location = controller.$viewValue;
-          element.val(location);
-        };
-
-        //watch options provided to directive
-        scope.watchOptions = function () {
-          return scope.options;
-        };
-        scope.$watch(scope.watchOptions, function () {
-          initOpts();
-        }, true);
-
-      }
-
-
-
-    };
-  })
-
-.directive('disableTap', function($timeout) {
-  return {
-    link: function() {
-
-      $timeout(function() {
-        document.querySelector('.pac-container').setAttribute('data-tap-disabled', 'true');
-      },500);
-    }
-  };
-});
-// }).call(this)
-
-(function() {
-  angular.module('ngBackImg', []).directive('ngBackImg', function() {
-    return function(scope, element, attrs){
-      var url = attrs.ngBackImg;
-      element.css({
-        'background-image': 'url(' + url + ')',
-        'background-size' : 'cover',
-        'width': '100%',
-        'height': '150px'
-      });
-    };
-  });
-
-}).call(this);
-
-/*
- * angular-google-places-autocomplete
- *
- * Copyright (c) 2014 "kuhnza" David Kuhn
- * Licensed under the MIT license.
- * https://github.com/kuhnza/angular-google-places-autocomplete/blob/master/LICENSE
- */
-
- // 'use strict';
-
-angular.module('googleAutocomplete', [])
-  /**
-   * DI wrapper around global google places library.
-   *
-   * Note: requires the Google Places API to already be loaded on the page.
-   */
-  .factory('googlePlacesApi', ['$window', function ($window) {
-        if (!$window.google) throw 'Global `google` var missing. Did you forget to include the places API script?';
-
-    return $window.google;
-  }])
-
-  /**
-   * Autocomplete directive. Use like this:
-   *
-   * <input type="text" g-places-autocomplete ng-model="myScopeVar" />
-   */
-  .directive('googleAutocomplete',
-        [ '$parse', '$compile', '$timeout', '$document', 'googlePlacesApi',
-        function ($parse, $compile, $timeout, $document, google) {
-
-            return {
-                restrict: 'A',
-                require: '^ngModel',
-                scope: {
-                    model: '=ngModel',
-                    options: '=?',
-                    forceSelection: '=?',
-                    customPlaces: '=?'
-                },
-                controller: ['$scope', function ($scope) {}],
-                link: function ($scope, element, attrs, controller) {
-                    var keymap = {
-                            tab: 9,
-                            enter: 13,
-                            esc: 27,
-                            up: 38,
-                            down: 40
-                        },
-                        hotkeys = [keymap.tab, keymap.enter, keymap.esc, keymap.up, keymap.down],
-                        autocompleteService = new google.maps.places.AutocompleteService(),
-                        placesService = new google.maps.places.PlacesService(element[0]);
-
-                    (function init() {
-                        $scope.query = '';
-                        $scope.predictions = [];
-                        $scope.input = element;
-                        $scope.options = $scope.options || {};
-
-                        initAutocompleteDrawer();
-                        initEvents();
-                        initNgModelController();
-                    }());
-
-                    function initEvents() {
-                        element.bind('keydown', onKeydown);
-                        element.bind('blur', onBlur);
-
-                        $scope.$watch('selected', select);
-                    }
-
-                    function initAutocompleteDrawer() {
-                        // Drawer element used to display predictions
-                        var drawerElement = angular.element('<div g-places-autocomplete-drawer></div>'),
-                            body = angular.element($document[0].body),
-                            $drawer;
-
-                        drawerElement.attr({
-                            input: 'input',
-                            query: 'query',
-                            predictions: 'predictions',
-                            active: 'active',
-                            selected: 'selected'
-                        });
-
-                        $drawer = $compile(drawerElement)($scope);
-                        body.append($drawer);  // Append to DOM
-                    }
-
-                    function initNgModelController() {
-                        controller.$parsers.push(parse);
-                        controller.$formatters.push(format);
-                        controller.$render = render;
-                    }
-
-                    function onKeydown(event) {
-                        if ($scope.predictions.length === 0 || indexOf(hotkeys, event.which) === -1) {
-                            return;
-                        }
-
-                        event.preventDefault();
-
-                        if (event.which === keymap.down) {
-                            $scope.active = ($scope.active + 1) % $scope.predictions.length;
-                            $scope.$digest();
-                        } else if (event.which === keymap.up) {
-                            $scope.active = ($scope.active ? $scope.active : $scope.predictions.length) - 1;
-                            $scope.$digest();
-                        } else if (event.which === 13 || event.which === 9) {
-                            if ($scope.forceSelection) {
-                                $scope.active = ($scope.active === -1) ? 0 : $scope.active;
-                            }
-
-                            $scope.$apply(function () {
-                                $scope.selected = $scope.active;
-
-                                if ($scope.selected === -1) {
-                                    clearPredictions();
-                                }
-                            });
-                        } else if (event.which === 27) {
-                            event.stopPropagation();
-                            clearPredictions();
-                            $scope.$digest();
-                        }
-                    }
-
-                    function onBlur(event) {
-                        if ($scope.predictions.length === 0) {
-                            return;
-                        }
-
-                        if ($scope.forceSelection) {
-                            $scope.selected = ($scope.selected === -1) ? 0 : $scope.selected;
-                        }
-
-                        $scope.$digest();
-
-                        $scope.$apply(function () {
-                            if ($scope.selected === -1) {
-                                clearPredictions();
-                            }
-                        });
-                    }
-
-                    function select() {
-                        var prediction;
-
-                        prediction = $scope.predictions[$scope.selected];
-                        if (!prediction) return;
-
-                        if (prediction.is_custom) {
-                            $scope.model = prediction.place;
-                            $scope.$emit('g-places-autocomplete:select', prediction.place);
-                        } else {
-                            placesService.getDetails({ placeId: prediction.place_id }, function (place, status) {
-                                if (status == google.maps.places.PlacesServiceStatus.OK) {
-                                    $scope.$apply(function () {
-                                        $scope.model = place;
-                                        $scope.$emit('g-places-autocomplete:select', place);
-                                    });
-                                }
-                            });
-                        }
-
-                        clearPredictions();
-                    }
-
-                    function parse(viewValue) {
-                        var request;
-
-                        if (!(viewValue && isString(viewValue))) return viewValue;
-
-                        $scope.query = viewValue;
-
-                        request = angular.extend({ input: viewValue }, $scope.options);
-                        autocompleteService.getPlacePredictions(request, function (predictions, status) {
-                            $scope.$apply(function () {
-                                var customPlacePredictions;
-
-                                clearPredictions();
-
-                                if ($scope.customPlaces) {
-                                    customPlacePredictions = getCustomPlacePredictions($scope.query);
-                                    $scope.predictions.push.apply($scope.predictions, customPlacePredictions);
-                                }
-
-                                if (status == google.maps.places.PlacesServiceStatus.OK) {
-                                    $scope.predictions.push.apply($scope.predictions, predictions);
-                                }
-
-                                if ($scope.predictions.length > 5) {
-                                    $scope.predictions.length = 5;  // trim predictions down to size
-                                }
-                            });
-                        });
-
-                        return viewValue;
-                    }
-
-                    function format(modelValue) {
-                        var viewValue = "";
-
-                        if (isString(modelValue)) {
-                            viewValue = modelValue;
-                        } else if (isObject(modelValue)) {
-                            viewValue = modelValue.formatted_address;
-                        }
-
-                        return viewValue;
-                    }
-
-                    function render() {
-                        return element.val(controller.$viewValue);
-                    }
-
-                    function clearPredictions() {
-                        $scope.active = -1;
-                        $scope.selected = -1;
-                        $scope.predictions.length = 0;
-                    }
-
-                    function getCustomPlacePredictions(query) {
-                        var predictions = [],
-                            place, match, i;
-
-                        for (i = 0; i < $scope.customPlaces.length; i++) {
-                            place = $scope.customPlaces[i];
-
-                            match = getCustomPlaceMatches(query, place);
-                            if (match.matched_substrings.length > 0) {
-                                predictions.push({
-                                    is_custom: true,
-                                    custom_prediction_label: place.custom_prediction_label || '(Custom Non-Google Result)',  // required by https://developers.google.com/maps/terms § 10.1.1 (d)
-                                    description: place.formatted_address,
-                                    place: place,
-                                    matched_substrings: match.matched_substrings,
-                                    terms: match.terms
-                                });
-                            }
-                        }
-
-                        return predictions;
-                    }
-
-                    function getCustomPlaceMatches(query, place) {
-                        var q = query + '',  // make a copy so we don't interfere with subsequent matches
-                            terms = [],
-                            matched_substrings = [],
-                            fragment,
-                            termFragments,
-                            i;
-
-                        termFragments = place.formatted_address.split(',');
-                        for (i = 0; i < termFragments.length; i++) {
-                            fragment = termFragments[i].trim();
-
-                            if (q.length > 0) {
-                                if (fragment.length >= q.length) {
-                                    if (startsWith(fragment, q)) {
-                                        matched_substrings.push({ length: q.length, offset: i });
-                                    }
-                                    q = '';  // no more matching to do
-                                } else {
-                                    if (startsWith(q, fragment)) {
-                                        matched_substrings.push({ length: fragment.length, offset: i });
-                                        q = q.replace(fragment, '').trim();
-                                    } else {
-                                        q = '';  // no more matching to do
-                                    }
-                                }
-                            }
-
-                            terms.push({
-                                value: fragment,
-                                offset: place.formatted_address.indexOf(fragment)
-                            });
-                        }
-
-                        return {
-                            matched_substrings: matched_substrings,
-                            terms: terms
-                        };
-                    }
-
-                    function isString(val) {
-                        return toString.call(val) == '[object String]';
-                    }
-
-                    function isObject(val) {
-                        return toString.call(val) == '[object Object]';
-                    }
-
-                    function indexOf(array, item) {
-                        var i, length;
-
-                        if (array == null) return -1;
-
-                        length = array.length;
-                        for (i = 0; i < length; i++) {
-                            if (array[i] === item) return i;
-                        }
-                        return -1;
-                    }
-
-                    function startsWith(string1, string2) {
-                        return string1.lastIndexOf(string2, 0) === 0;
-                    }
-                }
-            }
-        }
-    ])
-
-
-    .directive('gPlacesAutocompleteDrawer', ['$window', '$document', function ($window, $document) {
-        var TEMPLATE = [
-            '<div class="pac-container" ng-if="isOpen()" ng-style="{top: position.top+\'px\', left: position.left+\'px\', width: position.width+\'px\'}" style="display: block;" role="listbox" aria-hidden="{{!isOpen()}}">',
-            '  <div class="pac-item" g-places-autocomplete-prediction index="$index" prediction="prediction" query="query"',
-            '       ng-repeat="prediction in predictions track by $index" ng-class="{\'pac-item-selected\': isActive($index) }"',
-            '       ng-mouseenter="selectActive($index)" ng-click="selectPrediction($index)" role="option" id="{{prediction.id}}">',
-            '  </div>',
-            '</div>'
-        ];
-
-        return {
-            restrict: 'A',
-            scope:{
-                input: '=',
-                query: '=',
-                predictions: '=',
-                active: '=',
-                selected: '='
-            },
-            template: TEMPLATE.join(''),
-            link: function ($scope, element) {
-                element.bind('mousedown', function (event) {
-                    event.preventDefault();  // prevent blur event from firing when clicking selection
-                });
-
-                $scope.isOpen = function () {
-                    return $scope.predictions.length > 0;
-                };
-
-                $scope.isActive = function (index) {
-                    return $scope.active === index;
-                };
-
-                $scope.selectActive = function (index) {
-                    $scope.active = index;
-                };
-
-                $scope.selectPrediction = function (index) {
-                    $scope.selected = index;
-                };
-
-                $scope.$watch('predictions', function () {
-                    $scope.position = getDrawerPosition($scope.input);
-                });
-
-                function getDrawerPosition(element) {
-                    var domEl = element[0],
-                        rect = domEl.getBoundingClientRect(),
-                        docEl = $document[0].documentElement,
-                        body = $document[0].body,
-                        scrollTop = $window.pageYOffset || docEl.scrollTop || body.scrollTop,
-                        scrollLeft = $window.pageXOffset || docEl.scrollLeft || body.scrollLeft;
-
-                    return {
-                        width: rect.width,
-                        height: rect.height,
-                        top: rect.top + rect.height + scrollTop,
-                        left: rect.left + scrollLeft
-                    };
-                }
-            }
-        }
-    }])
-
-    .directive('gPlacesAutocompletePrediction', [function () {
-        var TEMPLATE = [
-            '<span class="pac-icon pac-icon-marker"></span>',
-            '<span class="pac-item-query" ng-bind-html="prediction | highlightMatched"></span>',
-            '<span ng-repeat="term in prediction.terms | unmatchedTermsOnly:prediction">{{term.value | trailingComma:!$last}}&nbsp;</span>',
-            '<span class="custom-prediction-label" ng-if="prediction.is_custom">&nbsp;{{prediction.custom_prediction_label}}</span>'
-        ];
-
-        return {
-            restrict: 'A',
-            scope:{
-                index:'=',
-                prediction:'=',
-                query:'='
-            },
-            template: TEMPLATE.join('')
-        }
-    }])
-
-    .filter('highlightMatched', ['$sce', function ($sce) {
-        return function (prediction) {
-            var matchedPortion = '',
-                unmatchedPortion = '',
-                matched;
-
-            if (prediction.matched_substrings.length > 0 && prediction.terms.length > 0) {
-                matched = prediction.matched_substrings[0];
-                matchedPortion = prediction.terms[0].value.substr(matched.offset, matched.length);
-                unmatchedPortion = prediction.terms[0].value.substr(matched.offset + matched.length);
-            }
-
-            return $sce.trustAsHtml('<span class="pac-matched">' + matchedPortion + '</span>' + unmatchedPortion);
-        }
-    }])
-
-    .filter('unmatchedTermsOnly', [function () {
-        return function (terms, prediction) {
-            var i, term, filtered = [];
-
-            for (i = 0; i < terms.length; i++) {
-                term = terms[i];
-                if (prediction.matched_substrings.length > 0 && term.offset > prediction.matched_substrings[0].length) {
-                    filtered.push(term);
-                }
-            }
-
-            return filtered;
-        }
-    }])
-
-    .filter('trailingComma', [function () {
-        return function (input, condition) {
-            return (condition) ? input + ',' : input;
-        }
-    }]);
-
-(function() {
-  angular.module('ngFadeIn', []).directive('ngFadeIn', function() {
-    return {
-      restrict: 'A',
-      link: function(scope, element, attrs, ngModel) {
-        TweenLite.to(element, 0, {autoAlpha:0});
-        TweenLite.to(element, 2.5, {autoAlpha:1});
-      }
-    };
-  });
-
-}).call(this);
-
-(function() {
-  angular.module('ngSelect', []).directive('ngMultiSelect', function() {
-    return {
-      restrict: 'E',
-      template: '<div class="button-bar"><button class="button button-small "ng-repeat="option in options" ng-class="{\'active\': option.active === true}" ng-click="activate(option.id)"> {{option.title}}</button></div>',
-      scope: {
-        multi: '=multiple',
-        options: '=options'
-      },
-      controller: function($scope) {
-        return $scope.activate = function(num) {
-          var item, _i, _len, _ref, _results;
-          _ref = $scope.options;
-          _results = [];
-          for (_i = 0, _len = _ref.length; _i < _len; _i++) {
-            item = _ref[_i];
-            if (item.id === num) {
-              _results.push(item.active = !item.active);
-            } else {
-              _results.push(void 0);
-            }
-          }
-          return _results;
-        };
-      }
-    };
-  }).directive('ngSingleSelect', function() {
-    return {
-      restrict: 'E',
-      template: '<div class="button-bar"><button class="button button-small "ng-repeat="option in options" ng-class="{\'active\': option.active === true}" ng-click="activate(option.id, $index)"> {{option.title}}</button></div>',
-      scope: {
-        multi: '=multiple',
-        options: '=options'
-      },
-      controller: function($scope) {
-        $scope.active = false;
-        return $scope.activate = function(num, index) {
-          var item, _i, _len, _ref, _results;
-          if ($scope.options[index].active === true) {
-            return $scope.options[index].active = !$scope.options[index].active;
-          } else {
-            $scope.options[index].active = !$scope.options[index].active;
-            _ref = $scope.options;
-            _results = [];
-            for (_i = 0, _len = _ref.length; _i < _len; _i++) {
-              item = _ref[_i];
-              if (item.id !== $scope.options[index].id) {
-                _results.push(item.active = !$scope.options[index].active);
-              } else {
-                _results.push(void 0);
-              }
-            }
-            return _results;
-          }
-        };
-      }
-    };
-  });
-
-}).call(this);
-
-(function() {
-  angular.module('ngRater', []).directive('ngRater', function() {
-    return {
-      restrict: 'E',
-      template: '<div class="button-bar"> <button class="button button-clear button-icon icon ion-ios7-star" ng-repeat="btn in buttons" ng-click="rating = $index" ng-class="{\'button-energized\': rating >= $index}"></button></div>'
-    };
-  });
-
-}).call(this);
-
-(function() {
-  angular.module('ngPlaces', []).directive('ngPlaces', [
-    '$ionicTemplateLoader', '$ionicBackdrop', '$q', '$timeout', '$rootScope', '$document', 'ngGPlacesAPI', 'MenusData', function($ionicTemplateLoader, $ionicBackdrop, $q, $timeout, $rootScope, $document, ngGPlacesAPI, MenusData) {
-      return {
-        require: '?ngModel',
-        restrict: 'E',
-        template: '<input type="text" readonly="readonly" class="ion-google-place" autocomplete="off">',
-        replace: true,
-        link: function(scope, element, attrs, ngModel) {
-          var POPUP_TPL, geocoder, popupPromise, searchEventTimeout;
-          scope.locations = [];
-          scope.locate = window.currLocation.coords;
-          geocoder = new google.maps.Geocoder();
-          searchEventTimeout = void 0;
-          POPUP_TPL = ['<div class="ion-google-place-container">', '<div class="bar bar-header bar-positive item-input-inset">', '<label class="item-input-wrapper">', '<i class="icon ion-ios7-search placeholder-icon"></i>', '<input id="searchQuery" class="google-place-search" type="search" ng-model="searchQuery" placeholder="Enter an address, place or ZIP code">', '</label>', '<button class="button button-clear">', 'Cancel', '</button>', '</div>', '<ion-content class="has-header has-header">', '<ion-list>', '<ion-item ng-repeat="location in locations" type="item-text-wrap" ng-click="selectLocation(location)">', '<h2>{{location.name}}</h2>', '</ion-item>', '</ion-list>', '</ion-content>', '</div>'].join('');
-          popupPromise = $ionicTemplateLoader.compile({
-            template: POPUP_TPL,
-            scope: scope,
-            appendTo: $document[0].body
-          });
-          popupPromise.then(function(el) {
-            var onCancel, onClick, searchInputElement;
-            searchInputElement = angular.element(el.element.find('input'));
-            scope.selectLocation = function(location) {
-              ngModel.$setViewValue(location);
-              ngModel.$render();
-              el.element.css('display', 'none');
-              return $ionicBackdrop.release();
-            };
-            scope.$watch('searchQuery', function(query) {
-              if (searchEventTimeout) {
-                $timeout.cancel(searchEventTimeout);
-              }
-              return searchEventTimeout = $timeout(function() {
-                if (!query) {
-                  return;
-                }
-                return ngGPlacesAPI.nearbySearch({
-                  nearbySearchKeys: ['geometry'],
-                  name: query,
-                  reference: query,
-                  latitude: scope.locate.latitude,
-                  longitude: scope.locate.longitude
-                }).then(function(data) {
-                  MenusData.set(data);
-                  console.log(data);
-                  scope.locations = data;
-                  return scope.vm.locations = data;
-                });
-              }, 350);
-            });
-            onClick = function(e) {
-              e.preventDefault();
-              e.stopPropagation();
-              $ionicBackdrop.retain();
-              el.element.css('display', 'block');
-              searchInputElement[0].focus();
-              return setTimeout(function() {
-                return searchInputElement[0].focus();
-              }, 0);
-            };
-            onCancel = function(e) {
-              scope.searchQuery = '';
-              $ionicBackdrop.release();
-              return el.element.css('display', 'none');
-            };
-            element.bind('click', onClick);
-            element.bind('touchend', onClick);
-            return el.element.find('button').bind('click', onCancel);
-          });
-          if (attrs.placeholder) {
-            element.attr('placeholder', attrs.placeholder);
-          }
-          ngModel.$formatters.unshift(function(modelValue) {
-            if (!modelValue) {
-              return '';
-            }
-            return modelValue;
-          });
-          ngModel.$parsers.unshift(function(viewValue) {
-            return viewValue;
-          });
-          return ngModel.$render = function() {
-            if (!ngModel.$viewValue) {
-              return element.val('');
-            } else {
-              return element.val(ngModel.$viewValue.formatted_address || '');
-            }
-          };
-        }
-      };
-    }
-  ]);
-
-}).call(this);
-
 (function() {
   var BackgroundGeo = function($q) {
     var from;
@@ -2521,6 +2521,11 @@ angular.module('googleAutocomplete', [])
 })();
 
 (function() {
+  angular.module('app.states.map', ['app.states.map.controllers']);
+
+}).call(this);
+
+(function() {
   angular.module('app.states.menu', []);
 }).call(this);
 
@@ -2612,11 +2617,6 @@ angular.module('googleAutocomplete', [])
         templateUrl: "js/states/splash/splash.html"
       });
     });
-
-}).call(this);
-
-(function() {
-  angular.module('app.states.map', ['app.states.map.controllers']);
 
 }).call(this);
 
@@ -2831,97 +2831,6 @@ angular
   });
 
 (function() {
-  angular.module('app.tabs.review', ['app.tabs.review.controllers'])
-    .config(function($stateProvider, $urlRouterProvider) {
-      return $stateProvider.state("tab.review", {
-        url: "/review",
-        views: {
-          "tab-review": {
-            templateUrl: "js/tabs/review/views/review.html",
-            controller: 'ReviewMenuCtrl as reviewMenu'
-          }
-        },
-        resolve: {
-          locationData: function() {
-            return {
-              lat: window.currLocation.coords.latitude,
-              lng: window.currLocation.coords.longitude,
-              dist: 0.6
-            };
-          },
-          reviewMenuInit: function(Menu, BackgroundGeo, $ionicLoading) {
-            var coords = this.resolve.locationData();
-            $ionicLoading.show({template:'Finding Nearby Restaurants...'});
-            return Menu.getByLocation(coords, null)
-              .then(function(menus) {
-                // Add distance from user to each menu.
-                _.each(menus, function(menu) {
-                  menu.dist = BackgroundGeo.distance(menu.latitude, menu.longitude);
-                });
-                $ionicLoading.hide();
-                return menus;
-              });
-          }
-        }
-      }).state("tab.review-choose-item", {
-        url: '/review/choose-item/:menuId',
-        views: {
-          "tab-review": {
-            templateUrl: 'js/tabs/review/views/chooseItem.html',
-            controller: 'ReviewItemCtrl as reviewItem'
-          }
-        },
-        resolve: {
-          menuInit: function($stateParams, Menu) {
-            var menuId = $stateParams.menuId;
-            return Menu.find(menuId)
-              .then(function(menu) {
-                return menu;
-              });
-          },
-          menuItemsInit: function($stateParams, Menu, $ionicLoading) {
-            $ionicLoading.show({template:'Loading Menu Items...'});
-            var menuId = $stateParams.menuId;
-            return Menu.getMenuItems(menuId)
-              .then(function(items) {
-                $ionicLoading.hide();
-                return items;
-              });
-          }
-        }
-      }).state("tab.review-create-item", {
-        url: '/review/create-item',
-        views: {
-          "tab-review": {
-            templateUrl: 'js/tabs/review/views/create-item.html',
-            controller: 'createItemCtrl as vm'
-          }
-        }
-      }).state("tab.review-create", {
-        url: '/review/create/:itemId',
-        views: {
-          "tab-review": {
-            templateUrl: 'js/tabs/review/views/create.html',
-            controller: 'createReviewCtrl as createReviewView'
-          }
-        },
-        resolve: {
-          createReviewInit: function($stateParams, MenuItem, $ionicLoading, $q) {
-            $ionicLoading.show({template: "Loading Item..."});
-            var itemId = $stateParams.itemId;
-            return MenuItem.find(itemId)
-              .then(function(item) {
-                $ionicLoading.hide();
-                return item[0];
-              });
-          }
-        }
-      });
-    });
-
-}).call(this);
-
-(function() {
   var MenusTab = function($stateProvider, $urlRouterProvider) {
     return $stateProvider.state("tab.menus", {
       url: "/menus",
@@ -3022,6 +2931,97 @@ angular
     'app.tabs.menus.services'
   ])
   .config(MenusTab);
+
+}).call(this);
+
+(function() {
+  angular.module('app.tabs.review', ['app.tabs.review.controllers'])
+    .config(function($stateProvider, $urlRouterProvider) {
+      return $stateProvider.state("tab.review", {
+        url: "/review",
+        views: {
+          "tab-review": {
+            templateUrl: "js/tabs/review/views/review.html",
+            controller: 'ReviewMenuCtrl as reviewMenu'
+          }
+        },
+        resolve: {
+          locationData: function() {
+            return {
+              lat: window.currLocation.coords.latitude,
+              lng: window.currLocation.coords.longitude,
+              dist: 0.6
+            };
+          },
+          reviewMenuInit: function(Menu, BackgroundGeo, $ionicLoading) {
+            var coords = this.resolve.locationData();
+            $ionicLoading.show({template:'Finding Nearby Restaurants...'});
+            return Menu.getByLocation(coords, null)
+              .then(function(menus) {
+                // Add distance from user to each menu.
+                _.each(menus, function(menu) {
+                  menu.dist = BackgroundGeo.distance(menu.latitude, menu.longitude);
+                });
+                $ionicLoading.hide();
+                return menus;
+              });
+          }
+        }
+      }).state("tab.review-choose-item", {
+        url: '/review/choose-item/:menuId',
+        views: {
+          "tab-review": {
+            templateUrl: 'js/tabs/review/views/chooseItem.html',
+            controller: 'ReviewItemCtrl as reviewItem'
+          }
+        },
+        resolve: {
+          menuInit: function($stateParams, Menu) {
+            var menuId = $stateParams.menuId;
+            return Menu.find(menuId)
+              .then(function(menu) {
+                return menu;
+              });
+          },
+          menuItemsInit: function($stateParams, Menu, $ionicLoading) {
+            $ionicLoading.show({template:'Loading Menu Items...'});
+            var menuId = $stateParams.menuId;
+            return Menu.getMenuItems(menuId)
+              .then(function(items) {
+                $ionicLoading.hide();
+                return items;
+              });
+          }
+        }
+      }).state("tab.review-create-item", {
+        url: '/review/create-item',
+        views: {
+          "tab-review": {
+            templateUrl: 'js/tabs/review/views/create-item.html',
+            controller: 'createItemCtrl as vm'
+          }
+        }
+      }).state("tab.review-create", {
+        url: '/review/create/:itemId',
+        views: {
+          "tab-review": {
+            templateUrl: 'js/tabs/review/views/create.html',
+            controller: 'createReviewCtrl as createReviewView'
+          }
+        },
+        resolve: {
+          createReviewInit: function($stateParams, MenuItem, $ionicLoading, $q) {
+            $ionicLoading.show({template: "Loading Item..."});
+            var itemId = $stateParams.itemId;
+            return MenuItem.find(itemId)
+              .then(function(item) {
+                $ionicLoading.hide();
+                return item[0];
+              });
+          }
+        }
+      });
+    });
 
 }).call(this);
 
